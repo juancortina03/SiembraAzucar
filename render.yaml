@@ -33,4 +33,4 @@ services:
         sync: false
       - key: BANXICO_TOKEN
         sync: false
-    plan: free
+    plan: starter
