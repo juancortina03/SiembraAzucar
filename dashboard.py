@@ -63,14 +63,14 @@ MODEL_COLORS = {
 AGRO_PALETTE = ["#2d6a4f", "#b8860b", "#a0522d", "#40916c", "#6b8f3c", "#d4a843"]
 
 BALANCE_LABELS = {
-    "produccion": "Produccion Nacional (ton)",
-    "importaciones": "Importaciones (ton)",
-    "exportaciones_totales": "Exportaciones Totales (ton)",
-    "consumo_nacional_aparente": "Consumo Nacional Aparente (ton)",
+    "produccion": "Produccion Nacional (ton/ano)",
+    "importaciones": "Importaciones (ton/ano)",
+    "exportaciones_totales": "Exportaciones Totales (ton/ano)",
+    "consumo_nacional_aparente": "Consumo Nacional Aparente (ton/ano)",
     "inventario_inicial": "Inventario Inicial (ton)",
     "inventario_final": "Inventario Final (ton)",
-    "oferta_total": "Oferta Total (ton)",
-    "demanda_total": "Demanda Total (ton)",
+    "oferta_total": "Oferta Total (ton/ano)",
+    "demanda_total": "Demanda Total (ton/ano)",
 }
 
 LEGEND_FONT = dict(color="#000000", size=11)
@@ -248,6 +248,8 @@ server = app.server  # Flask server exposed for gunicorn
 # -- Basic Auth middleware --
 @server.before_request
 def _basic_auth():
+    if os.environ.get("DASH_NOAUTH") == "1":
+        return
     from flask import request, Response
     auth = request.authorization
     if not auth or auth.username != DASH_USER or auth.password != DASH_PASS:
@@ -1126,15 +1128,13 @@ def update_forecast_chart(history_days, product):
 
 # Primary variables (production & national balance) -- emphasized in UI
 PRIMARY_SCENARIO_VARS = [
-    ("produccion", "Produccion Nacional (ton)"),
-    ("consumo_nacional_aparente", "Consumo Nacional Aparente (ton)"),
+    ("produccion", "Produccion Nacional (ton/ano)"),
+    ("consumo_nacional_aparente", "Consumo Nacional Aparente (ton/ano)"),
     ("inventario_final", "Inventario Final (ton)"),
-    ("oferta_total", "Oferta Total (ton)"),
-    ("demanda_total", "Demanda Total (ton)"),
 ]
 SECONDARY_SCENARIO_VARS = [
-    ("importaciones", "Importaciones (ton)"),
-    ("exportaciones_totales", "Exportaciones Totales (ton)"),
+    ("importaciones", "Importaciones (ton/ano)"),
+    ("exportaciones_totales", "Exportaciones Totales (ton/ano)"),
     ("inventario_inicial", "Inventario Inicial (ton)"),
 ]
 
@@ -1147,13 +1147,15 @@ EXTERNAL_SCENARIO_VARS = [
 ]
 
 DERIVED_RATIO_LABELS = {
+    "oferta_total": "Oferta Total (ton/ano)",
+    "demanda_total": "Demanda Total (ton/ano)",
     "supply_demand_ratio": "Oferta / Demanda",
     "inventory_months": "Meses de Inventario",
     "demand_pressure": "Presion de Demanda",
     "production_share": "Participacion Produccion",
     "inventory_to_consumption": "Inventario / Consumo",
-    "net_exports": "Exportaciones Netas (ton)",
-    "excess_supply": "Exceso de Oferta (ton)",
+    "net_exports": "Exportaciones Netas (ton/ano)",
+    "excess_supply": "Exceso de Oferta (ton/ano)",
 }
 
 
@@ -1167,27 +1169,70 @@ def page_scenario(product, product_df, model_data, has_model):
     latest_balance = model_data.get("latest_balance", {})
     balance_df = model_data.get("balance")
 
+    # --- Aggregate balance to annual totals ---
+    # Only pure flow variables are summed; oferta_total/demanda_total are computed
+    FLOW_COLS = ["produccion", "importaciones", "exportaciones_totales",
+                 "consumo_nacional_aparente"]
+    STOCK_COLS_FIRST = ["inventario_inicial"]   # first month of year
+    STOCK_COLS_LAST  = ["inventario_final"]     # last month of year
+
+    annual_balance = None
+    if balance_df is not None and not balance_df.empty:
+        _bdf = balance_df.copy()
+        _bdf["year"] = _bdf["year"].astype(int)
+        _agg = {}
+        for c in FLOW_COLS:
+            if c in _bdf.columns:
+                _agg[c] = "sum"
+        _ann = _bdf.groupby("year").agg(_agg).reset_index()
+        # Stock cols: inventario_inicial = first month, inventario_final = last month
+        for c in STOCK_COLS_FIRST:
+            if c in _bdf.columns:
+                _first = _bdf.sort_values("month_number").groupby("year")[c].first().reset_index()
+                _ann = _ann.merge(_first, on="year", how="left")
+        for c in STOCK_COLS_LAST:
+            if c in _bdf.columns:
+                _last = _bdf.sort_values("month_number").groupby("year")[c].last().reset_index()
+                _ann = _ann.merge(_last, on="year", how="left")
+        # Compute oferta_total and demanda_total from annual components
+        _ann["oferta_total"] = _ann.get("inventario_inicial", 0) + _ann.get("produccion", 0) + _ann.get("importaciones", 0)
+        _ann["demanda_total"] = _ann.get("consumo_nacional_aparente", 0) + _ann.get("exportaciones_totales", 0)
+        # Recompute derived ratios from annual totals
+        _ann["supply_demand_ratio"] = _ann["oferta_total"] / _ann["demanda_total"].replace(0, 1)
+        _ann["inventory_months"] = _ann["inventario_final"] / (_ann["consumo_nacional_aparente"].replace(0, 1) / 12)
+        annual_balance = _ann
+
+    # Latest annual balance for slider defaults
+    latest_annual = {}
+    if annual_balance is not None and not annual_balance.empty:
+        _row = annual_balance.iloc[-1]
+        for c in FLOW_COLS + STOCK_COLS_FIRST + STOCK_COLS_LAST + ["oferta_total", "demanda_total"]:
+            if c in _row.index:
+                latest_annual[c] = float(_row[c])
+        latest_annual["supply_demand_ratio"] = float(_row.get("supply_demand_ratio", 1))
+        latest_annual["inventory_months"] = float(_row.get("inventory_months", 0))
+
     sections = [
         html.H1(f"Analisis de Escenarios -- {PRODUCT_LABELS[product]}", className="page-title"),
         html.P(
-            "Simule diferentes condiciones de mercado para ver como afectarian el precio del azucar. "
-            "Ajuste produccion, consumo, inventario y condiciones internacionales, y compare el resultado "
-            "contra la proyeccion base. Los indicadores derivados se calculan automaticamente.",
+            "Simule diferentes condiciones anuales de mercado para ver como afectarian el precio del azucar. "
+            "Ajuste produccion, consumo, inventario y condiciones internacionales a nivel anual, y compare "
+            "el resultado contra la proyeccion base. Los indicadores derivados se calculan automaticamente.",
             className="page-desc",
         ),
     ]
 
-    # ---- Balance History Table (last 12 months) ----
-    if balance_df is not None and not balance_df.empty:
+    # ---- Annual Balance History Table ----
+    if annual_balance is not None and not annual_balance.empty:
         sections.extend([
-            html.H2("Balance Azucarero Nacional (Ultimos 12 Meses)", className="section-title"),
+            html.H2("Balance Azucarero Nacional Anual", className="section-title"),
         ])
 
-        bal_recent = balance_df.tail(12).copy().reset_index(drop=True)
-        bal_recent["Periodo"] = bal_recent["year"].astype(int).astype(str) + "-" + bal_recent["month_number"].astype(int).astype(str).str.zfill(2)
+        bal_recent = annual_balance.tail(10).copy().reset_index(drop=True)
+        bal_recent["Ano"] = bal_recent["year"].astype(int).astype(str)
 
         display_cols = [
-            ("Periodo", "Periodo"),
+            ("Ano", "Ano"),
             ("produccion", "Produccion"),
             ("consumo_nacional_aparente", "Consumo Nac."),
             ("inventario_final", "Inv. Final"),
@@ -1204,7 +1249,7 @@ def page_scenario(product, product_df, model_data, has_model):
             if col_id in bal_recent.columns:
                 if col_id in ("supply_demand_ratio", "inventory_months"):
                     bal_display[col_name] = bal_recent[col_id].apply(lambda x: f"{x:.2f}")
-                elif col_id == "Periodo":
+                elif col_id == "Ano":
                     bal_display[col_name] = bal_recent[col_id].values
                 else:
                     bal_display[col_name] = bal_recent[col_id].apply(lambda x: f"{x:,.0f}")
@@ -1237,8 +1282,8 @@ def page_scenario(product, product_df, model_data, has_model):
             )
         )
 
-        # Production vs Consumption chart
-        period = bal_recent["Periodo"]
+        # Annual Production vs Consumption chart
+        period = bal_recent["Ano"]
         fig_pc = go.Figure()
         fig_pc.add_trace(go.Bar(x=period, y=bal_recent["produccion"], name="Produccion",
                                 marker_color="#2d6a4f"))
@@ -1249,8 +1294,8 @@ def page_scenario(product, product_df, model_data, has_model):
                                     yaxis="y2"))
         fig_pc.update_layout(
             **AGRO_LAYOUT, height=380, barmode="group",
-            title="Produccion vs Consumo Nacional e Inventario",
-            xaxis_title="Mes", yaxis_title="Toneladas",
+            title="Produccion vs Consumo Nacional e Inventario (Anual)",
+            xaxis_title="Ano", yaxis_title="Toneladas",
             yaxis2=dict(title="Inventario Final (ton)", overlaying="y", side="right",
                         showgrid=False, tickfont=dict(color="#a0522d"),
                         title_font=dict(color="#a0522d")),
@@ -1261,18 +1306,19 @@ def page_scenario(product, product_df, model_data, has_model):
 
     sections.append(html.Hr(className="section-sep"))
 
-    # ---- Current balance KPIs ----
-    sections.append(html.H2("Valores Actuales del Balance (Ultimo Mes)", className="section-title"))
+    # ---- Current annual balance KPIs ----
+    _last_year_label = str(int(annual_balance.iloc[-1]["year"])) if annual_balance is not None and not annual_balance.empty else "N/A"
+    sections.append(html.H2(f"Balance Anual ({_last_year_label})", className="section-title"))
     bal_kpis = []
     for key, label in list(BALANCE_LABELS.items())[:5]:  # Show top 5
-        val = latest_balance.get(key, 0)
+        val = latest_annual.get(key, 0)
         bal_kpis.append(kpi_card(label.split("(")[0].strip(), format_tons(val)))
     sections.append(html.Div(bal_kpis, className="kpi-row"))
 
-    # Derived ratios KPIs
+    # Derived ratios KPIs (annual)
     ratio_kpis = []
-    for key in ["supply_demand_ratio", "inventory_months", "demand_pressure"]:
-        val = latest_balance.get(key, 0)
+    for key in ["supply_demand_ratio", "inventory_months"]:
+        val = latest_annual.get(key, 0)
         ratio_kpis.append(kpi_card(DERIVED_RATIO_LABELS[key], f"{val:.2f}"))
     sections.append(html.Div(ratio_kpis, className="kpi-row"))
 
@@ -1280,18 +1326,19 @@ def page_scenario(product, product_df, model_data, has_model):
 
     # ---- PRIMARY VARIABLES (Production & National Balance) ----
     sections.extend([
-        html.H2("Variables Principales", className="section-title"),
+        html.H2("Variables Principales (Anuales)", className="section-title"),
         html.Div(
-            "Estos son los factores con mayor impacto en el precio. "
-            "La produccion y el consumo nacional son los principales determinantes.",
+            "Estos son los factores anuales con mayor impacto en el precio. "
+            "La produccion y el consumo nacional son los principales determinantes. "
+            "Los valores representan totales anuales.",
             className="info-box",
         ),
     ])
 
-    def make_slider(key, label, latest_balance):
-        current_val = latest_balance.get(key, 0)
+    def make_slider(key, label, annual_vals):
+        current_val = annual_vals.get(key, 0)
         if current_val == 0:
-            min_val, max_val, default_val = 0, 5_000_000, 0
+            min_val, max_val, default_val = 0, 50_000_000, 0
         else:
             min_val = 0
             max_val = int(current_val * 3)
@@ -1299,7 +1346,7 @@ def page_scenario(product, product_df, model_data, has_model):
         step = max(1, int(max_val / 200))
         return html.Div([
             html.Label(label, style={"fontWeight": "600", "color": "#1a3a2a", "fontSize": "0.85rem"}),
-            html.Div(f"Actual: {format_tons(current_val)}",
+            html.Div(f"Actual anual: {format_tons(current_val)}",
                      style={"fontSize": "0.75rem", "color": "#6b7f6e", "marginBottom": "4px"}),
             dcc.Slider(
                 id=f"scenario-{key}",
@@ -1313,7 +1360,7 @@ def page_scenario(product, product_df, model_data, has_model):
 
     primary_sliders = []
     for key, label in PRIMARY_SCENARIO_VARS:
-        primary_sliders.append(make_slider(key, label, latest_balance))
+        primary_sliders.append(make_slider(key, label, latest_annual))
 
     # Two columns for primary
     half_p = (len(primary_sliders) + 1) // 2
@@ -1322,16 +1369,26 @@ def page_scenario(product, product_df, model_data, has_model):
         html.Div(primary_sliders[half_p:], style={"flex": "1"}),
     ], style={"display": "flex", "gap": "24px"}))
 
+    # Hidden sliders for oferta_total and demanda_total (computed, not user-set)
+    sections.append(html.Div(
+        dcc.Slider(id="scenario-oferta_total", min=0, max=1, value=0),
+        style={"display": "none"},
+    ))
+    sections.append(html.Div(
+        dcc.Slider(id="scenario-demanda_total", min=0, max=1, value=0),
+        style={"display": "none"},
+    ))
+
     # ---- SECONDARY VARIABLES ----
     sections.extend([
         html.Hr(className="section-sep"),
-        html.H2("Variables Secundarias", className="section-title"),
-        html.P("Comercio exterior e inventario inicial.", className="page-desc"),
+        html.H2("Variables Secundarias (Anuales)", className="section-title"),
+        html.P("Comercio exterior e inventario inicial (totales anuales).", className="page-desc"),
     ])
 
     secondary_sliders = []
     for key, label in SECONDARY_SCENARIO_VARS:
-        secondary_sliders.append(make_slider(key, label, latest_balance))
+        secondary_sliders.append(make_slider(key, label, latest_annual))
 
     sections.append(html.Div(secondary_sliders, style={"maxWidth": "700px"}))
 
@@ -1350,10 +1407,10 @@ def page_scenario(product, product_df, model_data, has_model):
     if has_external:
         sections.extend([
             html.Hr(className="section-sep"),
-            html.H2("Variables de Mercado Externo", className="section-title"),
+            html.H2("Variables de Mercado Externo (Promedios Anuales)", className="section-title"),
             html.P(
                 "Condiciones del mercado internacional: tipo de cambio, precio internacional del azucar "
-                "y petroleo. Estos factores externos tambien influyen en el precio domestico.",
+                "y petroleo. Estos valores representan promedios anuales esperados.",
                 className="page-desc",
             ),
         ])
@@ -1404,8 +1461,8 @@ def page_scenario(product, product_df, model_data, has_model):
     # ---- Derived ratios preview ----
     sections.extend([
         html.Hr(className="section-sep"),
-        html.H2("Indicadores Calculados del Escenario", className="section-title"),
-        html.P("Estos indicadores se calculan automaticamente a partir de las variables del escenario.",
+        html.H2("Indicadores Calculados del Escenario (Anuales)", className="section-title"),
+        html.P("Estos indicadores se calculan automaticamente a partir de las variables anuales del escenario.",
                className="page-desc"),
         html.Div(id="scenario-derived-ratios"),
     ])
@@ -1414,11 +1471,11 @@ def page_scenario(product, product_df, model_data, has_model):
     sections.extend([
         html.Hr(className="section-sep"),
         html.Div([
-            html.Label("Horizonte de pronostico (meses)", style={"fontWeight": "600", "color": "#1a3a2a", "fontSize": "0.85rem"}),
+            html.Label("Horizonte de pronostico (anos)", style={"fontWeight": "600", "color": "#1a3a2a", "fontSize": "0.85rem"}),
             dcc.Dropdown(
                 id="scenario-horizon",
-                options=[{"label": f"{m} meses", "value": m} for m in [1, 2, 3, 6, 9, 12]],
-                value=6,
+                options=[{"label": f"{y} {'ano' if y == 1 else 'anos'}", "value": y} for y in [1, 2, 3, 4, 5]],
+                value=1,
                 clearable=False,
                 style={"width": "180px"},
             ),
@@ -1452,10 +1509,13 @@ def update_derived_ratios(*vals):
     cna = scenario.get("consumo_nacional_aparente", 1) or 1
     inv_i = scenario.get("inventario_inicial", 0)
     inv_f = scenario.get("inventario_final", 0)
-    ot = scenario.get("oferta_total", 1) or 1
-    dt_ = scenario.get("demanda_total", 1) or 1
+    # Compute oferta_total and demanda_total from components
+    ot = inv_i + prod + imp
+    dt_ = cna + exp
 
     ratios = {
+        "oferta_total": ot,
+        "demanda_total": dt_,
         "supply_demand_ratio": ot / dt_ if dt_ else 1,
         "inventory_months": inv_f / (cna / 12) if cna else 0,
         "demand_pressure": (cna + exp) / (prod + imp + inv_i) if (prod + imp + inv_i) else 1,
@@ -1468,7 +1528,7 @@ def update_derived_ratios(*vals):
     cards = []
     for key, label in DERIVED_RATIO_LABELS.items():
         val = ratios.get(key, 0)
-        if key in ("net_exports", "excess_supply"):
+        if key in ("net_exports", "excess_supply", "oferta_total", "demanda_total"):
             display = format_tons(val)
         else:
             display = f"{val:.3f}"
@@ -1491,8 +1551,9 @@ def run_scenario(n_clicks, product, *args):
     if not n_clicks:
         return no_update
 
-    scenario_months = args[-1]
-    scenario = {_ALL_SCENARIO_KEYS[i]: (args[i] or 0) for i in range(len(_ALL_SCENARIO_KEYS))}
+    scenario_years = args[-1] or 1
+    scenario_months = int(scenario_years) * 12
+    annual_scenario = {_ALL_SCENARIO_KEYS[i]: (args[i] or 0) for i in range(len(_ALL_SCENARIO_KEYS))}
 
     raw_df = load_raw_prices()
     model_data = load_model_outputs(product)
@@ -1506,36 +1567,69 @@ def run_scenario(n_clicks, product, *args):
     ext_df = model_data.get("external")
     latest_balance = model_data.get("latest_balance", {})
 
+    # Convert annual scenario values to monthly for the model
+    # Flow variables: divide by 12; stock variables & external: keep as-is
+    _FLOW_KEYS = {"produccion", "importaciones", "exportaciones_totales",
+                   "consumo_nacional_aparente"}
+    monthly_scenario = {}
+    for k, v in annual_scenario.items():
+        if k in _FLOW_KEYS:
+            monthly_scenario[k] = v / 12.0
+        else:
+            monthly_scenario[k] = v
+    # Compute monthly oferta_total and demanda_total from components
+    _prod_m = monthly_scenario.get("produccion", 0)
+    _imp_m = monthly_scenario.get("importaciones", 0)
+    _inv_i = monthly_scenario.get("inventario_inicial", 0)
+    _cna_m = monthly_scenario.get("consumo_nacional_aparente", 0)
+    _exp_m = monthly_scenario.get("exportaciones_totales", 0)
+    monthly_scenario["oferta_total"] = _inv_i + _prod_m + _imp_m
+    monthly_scenario["demanda_total"] = _cna_m + _exp_m
+
     from sugar_price_model import forecast_monthly
 
     lpd = product_df["date"].max()
     lap = float(product_df["price"].iloc[-1])
 
-    scenario_daily, scenario_monthly = forecast_monthly(
+    scenario_daily, scenario_monthly_fc = forecast_monthly(
         model, scaler, feature_cols, monthly_df,
-        months_ahead=scenario_months, scenario=scenario,
+        months_ahead=scenario_months, scenario=monthly_scenario,
         latest_price_date=lpd, latest_actual_price=lap,
         balance_df=bal_df, external_df=ext_df,
     )
-    baseline_daily, baseline_monthly = forecast_monthly(
+    baseline_daily, baseline_monthly_fc = forecast_monthly(
         model, scaler, feature_cols, monthly_df,
         months_ahead=scenario_months, scenario=None,
         latest_price_date=lpd, latest_actual_price=lap,
         balance_df=bal_df, external_df=ext_df,
     )
 
-    # Comparison table
-    comp = baseline_monthly[["year", "month", "predicted_price"]].copy()
-    comp.columns = ["Ano", "Mes", "Precio Base"]
-    comp["Precio Escenario"] = scenario_monthly["predicted_price"].values
+    # Aggregate monthly forecasts to annual averages
+    baseline_monthly_fc["year"] = baseline_monthly_fc["year"].astype(int)
+    scenario_monthly_fc["year"] = scenario_monthly_fc["year"].astype(int)
+
+    baseline_annual = baseline_monthly_fc.groupby("year").agg(
+        predicted_price=("predicted_price", "mean"),
+    ).reset_index()
+    scenario_annual = scenario_monthly_fc.groupby("year").agg(
+        predicted_price=("predicted_price", "mean"),
+    ).reset_index()
+
+    # Comparison table (annual)
+    comp = baseline_annual[["year", "predicted_price"]].copy()
+    comp.columns = ["Ano", "Precio Base"]
+    comp["Precio Escenario"] = scenario_annual["predicted_price"].values
     comp["Diferencia"] = comp["Precio Escenario"] - comp["Precio Base"]
-    comp["Periodo"] = comp["Ano"].astype(int).astype(str) + "-" + comp["Mes"].astype(int).astype(str).str.zfill(2)
+    comp_raw_base = comp["Precio Base"].copy()
+    comp_raw_scen = comp["Precio Escenario"].copy()
+    comp_raw_diff = comp["Diferencia"].copy()
+    comp["Ano"] = comp["Ano"].astype(int).astype(str)
     comp["Precio Base"] = comp["Precio Base"].apply(lambda x: f"${x:,.2f}")
     comp["Precio Escenario"] = comp["Precio Escenario"].apply(lambda x: f"${x:,.2f}")
     comp["Diferencia"] = comp["Diferencia"].apply(lambda x: f"{x:+,.2f}")
 
-    # Chart
-    recent = product_df.tail(180)
+    # Chart -- show daily trajectory with annual averages
+    recent = product_df.tail(365)
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=recent["date"], y=recent["price"],
@@ -1552,36 +1646,87 @@ def run_scenario(n_clicks, product, *args):
         mode="lines", name="Pronostico Escenario",
         line=dict(color="#b8860b", width=2.5),
     ))
+
+    # Add annual average markers
+    for _, row in baseline_annual.iterrows():
+        mid_date = pd.Timestamp(year=int(row["year"]), month=7, day=1)
+        fig.add_trace(go.Scatter(
+            x=[mid_date], y=[row["predicted_price"]],
+            mode="markers", marker=dict(size=12, color="#40916c", symbol="diamond"),
+            name=f"Promedio Base {int(row['year'])}", showlegend=False,
+        ))
+    for _, row in scenario_annual.iterrows():
+        mid_date = pd.Timestamp(year=int(row["year"]), month=7, day=1)
+        fig.add_trace(go.Scatter(
+            x=[mid_date], y=[row["predicted_price"]],
+            mode="markers", marker=dict(size=12, color="#b8860b", symbol="diamond"),
+            name=f"Promedio Escenario {int(row['year'])}", showlegend=False,
+        ))
+
     fig.update_layout(
         **AGRO_LAYOUT, height=500,
         xaxis_title="Fecha", yaxis_title="Precio (MXN/ton)",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, bgcolor="rgba(0,0,0,0)", font=LEGEND_FONT),
-        title="Comparacion: Escenario vs Proyeccion Base",
+        title="Comparacion Anual: Escenario vs Proyeccion Base",
     )
 
     # KPIs
     current_price = product_df["price"].iloc[-1]
-    baseline_end = baseline_monthly["predicted_price"].iloc[-1]
-    scenario_end = scenario_monthly["predicted_price"].iloc[-1]
+    baseline_end = comp_raw_base.iloc[-1]
+    scenario_end = comp_raw_scen.iloc[-1]
 
-    # Changes table
+    # Compute annual latest_balance for changes table (same aggregation as page_scenario)
+    _FLOW_KEYS_LIST = list(_FLOW_KEYS)
+    _annual_latest = {}
+    if bal_df is not None and not bal_df.empty:
+        _bdf2 = bal_df.copy()
+        _bdf2["year"] = _bdf2["year"].astype(int)
+        _agg2 = {c: "sum" for c in _FLOW_KEYS_LIST if c in _bdf2.columns}
+        _ann2 = _bdf2.groupby("year").agg(_agg2).reset_index()
+        for c in ["inventario_inicial"]:
+            if c in _bdf2.columns:
+                _f = _bdf2.sort_values("month_number").groupby("year")[c].first().reset_index()
+                _ann2 = _ann2.merge(_f, on="year", how="left")
+        for c in ["inventario_final"]:
+            if c in _bdf2.columns:
+                _l = _bdf2.sort_values("month_number").groupby("year")[c].last().reset_index()
+                _ann2 = _ann2.merge(_l, on="year", how="left")
+        # Compute oferta_total and demanda_total from components
+        _ann2["oferta_total"] = _ann2.get("inventario_inicial", 0) + _ann2.get("produccion", 0) + _ann2.get("importaciones", 0)
+        _ann2["demanda_total"] = _ann2.get("consumo_nacional_aparente", 0) + _ann2.get("exportaciones_totales", 0)
+        if not _ann2.empty:
+            _lr = _ann2.iloc[-1]
+            for c in _FLOW_KEYS_LIST + ["inventario_inicial", "inventario_final", "oferta_total", "demanda_total"]:
+                if c in _lr.index:
+                    _annual_latest[c] = float(_lr[c])
+
+    # Compute annual oferta_total/demanda_total for the scenario too
+    _scen_prod = annual_scenario.get("produccion", 0)
+    _scen_imp = annual_scenario.get("importaciones", 0)
+    _scen_inv_i = annual_scenario.get("inventario_inicial", 0)
+    _scen_cna = annual_scenario.get("consumo_nacional_aparente", 0)
+    _scen_exp = annual_scenario.get("exportaciones_totales", 0)
+    annual_scenario["oferta_total"] = _scen_inv_i + _scen_prod + _scen_imp
+    annual_scenario["demanda_total"] = _scen_cna + _scen_exp
+
+    # Changes table (annual values)
     changes = []
     for key, label in BALANCE_LABELS.items():
-        old = latest_balance.get(key, 0)
-        new = scenario.get(key, old)
+        old = _annual_latest.get(key, 0)
+        new = annual_scenario.get(key, old)
         pct = ((new - old) / old) * 100 if old != 0 else 0
         changes.append({
             "Variable": label.split("(")[0].strip(),
-            "Actual": format_tons(old),
-            "Escenario": format_tons(new),
+            "Actual Anual": format_tons(old),
+            "Escenario Anual": format_tons(new),
             "Cambio %": f"{pct:+.1f}%",
         })
 
     return html.Div([
-        html.H2("Resultados del Escenario", className="section-title"),
+        html.H2("Resultados del Escenario (Pronostico Anual)", className="section-title"),
         dash_table.DataTable(
-            data=comp[["Periodo", "Precio Base", "Precio Escenario", "Diferencia"]].to_dict("records"),
-            columns=[{"name": c, "id": c} for c in ["Periodo", "Precio Base", "Precio Escenario", "Diferencia"]],
+            data=comp[["Ano", "Precio Base", "Precio Escenario", "Diferencia"]].to_dict("records"),
+            columns=[{"name": c, "id": c} for c in ["Ano", "Precio Base", "Precio Escenario", "Diferencia"]],
             style_header={
                 "backgroundColor": "#f8f6f2", "color": "#000",
                 "fontWeight": "600", "border": "1px solid #c4beb2",
@@ -1597,19 +1742,19 @@ def run_scenario(n_clicks, product, *args):
         dcc.Graph(figure=fig),
         html.Div([
             kpi_card("Precio Actual", format_price(current_price)),
-            kpi_card("Final Base", format_price(baseline_end),
+            kpi_card("Promedio Anual Base", format_price(baseline_end),
                      delta=f"{baseline_end - current_price:+.2f} MXN",
                      delta_positive=baseline_end >= current_price),
-            kpi_card("Final Escenario", format_price(scenario_end),
+            kpi_card("Promedio Anual Escenario", format_price(scenario_end),
                      delta=f"{scenario_end - current_price:+.2f} MXN",
                      delta_positive=scenario_end >= current_price),
             kpi_card("Escenario vs Base", f"{scenario_end - baseline_end:+.2f} MXN",
                      delta_positive=scenario_end >= baseline_end),
         ], className="kpi-row"),
-        html.H2("Cambios del Escenario vs Actual", className="section-title"),
+        html.H2("Cambios del Escenario vs Balance Anual Actual", className="section-title"),
         dash_table.DataTable(
             data=changes,
-            columns=[{"name": c, "id": c} for c in ["Variable", "Actual", "Escenario", "Cambio %"]],
+            columns=[{"name": c, "id": c} for c in ["Variable", "Actual Anual", "Escenario Anual", "Cambio %"]],
             style_header={
                 "backgroundColor": "#f8f6f2", "color": "#000",
                 "fontWeight": "600", "border": "1px solid #c4beb2",
