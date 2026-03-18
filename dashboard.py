@@ -13,6 +13,7 @@ Run:  py dashboard.py
 
 import base64
 import json
+import os
 import pickle
 from pathlib import Path
 
@@ -22,6 +23,12 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dash import Dash, Input, Output, State, callback, dcc, html, dash_table, no_update, ctx
 from sugar_price_model import EnsembleModel
+
+# ---------------------------------------------------------------
+# Basic Auth (password-protected access)
+# ---------------------------------------------------------------
+DASH_USER = os.environ.get("DASH_USER", "admin")
+DASH_PASS = os.environ.get("DASH_PASS", "sugar2026")
 
 
 class _ModelUnpickler(pickle.Unpickler):
@@ -234,6 +241,19 @@ app = Dash(
     title="Sugar Focars | Inteligencia Agricola",
     suppress_callback_exceptions=True,
 )
+server = app.server  # Flask server exposed for gunicorn
+
+
+# -- Basic Auth middleware --
+@server.before_request
+def _basic_auth():
+    from flask import request, Response
+    auth = request.authorization
+    if not auth or auth.username != DASH_USER or auth.password != DASH_PASS:
+        return Response(
+            "Login required.", 401,
+            {"WWW-Authenticate": 'Basic realm="Sugar Focars"'},
+        )
 
 # -- Header --
 logo_el = html.Img(src=LOGO_SRC, style={"maxHeight": "38px"}) if LOGO_SRC else html.Span("", style={"fontSize": "1.5rem"})
@@ -2252,4 +2272,5 @@ def update_fi_chart(selected_model, product):
 # Run
 # ---------------------------------------------------------------
 if __name__ == "__main__":
-    app.run(debug=False, host="127.0.0.1", port=8050)
+    port = int(os.environ.get("PORT", 8050))
+    app.run(debug=False, host="0.0.0.0", port=port)

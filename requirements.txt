@@ -10,3 +10,5 @@ openpyxl
 pdfplumber
 fredapi
 python-dotenv
+gunicorn
+flask
