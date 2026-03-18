@@ -33,4 +33,8 @@ services:
         sync: false
       - key: BANXICO_TOKEN
         sync: false
+      - key: GITHUB_TOKEN
+        sync: false        # GitHub PAT with repo write access
+      - key: GITHUB_REPO
+        value: "juancortina03/SiembraAzucar"
     plan: starter
