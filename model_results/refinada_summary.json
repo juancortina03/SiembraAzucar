@@ -1,0 +1,213 @@
+{
+  "product": "refinada",
+  "best_model": "Monthly Ensemble",
+  "best_monthly_model": "Monthly Ensemble",
+  "best_daily_model": "Daily Random Forest",
+  "best_metrics": {
+    "MAE": 28.98993450800946,
+    "RMSE": 40.17528683755582,
+    "R2": 0.9660966892345354,
+    "MAPE": 2.2108395073337466,
+    "Change_R2": 0.10472867629157878
+  },
+  "train_metrics": {
+    "MAE": 0
+  },
+  "monthly_metrics": {
+    "MAE": 28.98993450800946,
+    "RMSE": 40.17528683755582,
+    "R2": 0.9660966892345354,
+    "MAPE": 2.2108395073337466,
+    "Change_R2": 0.10472867629157878
+  },
+  "daily_metrics": {
+    "MAE": 4.141073512036104,
+    "RMSE": 6.515457121951741,
+    "R2": 0.9989314677445476,
+    "MAPE": 0.3083054873296878,
+    "Return_R2": 0.016309884544306708
+  },
+  "train_size": 125,
+  "test_size": 42,
+  "daily_train_size": 3637,
+  "daily_test_size": 910,
+  "outliers_removed": 16,
+  "forecast_days": 90,
+  "forecast_months": 6,
+  "date_range": [
+    "2000-10-02 00:00:00",
+    "2026-03-06 00:00:00"
+  ],
+  "all_models_metrics": [
+    {
+      "model": "Monthly Ridge",
+      "MAE": 29.644099116460797,
+      "RMSE": 40.77690150151084,
+      "R2_price": 0.9650736998082051,
+      "MAPE_pct": 2.2593762825610866,
+      "Change_R2": 0.0749432333709128,
+      "Train_MAE": 12.89197921702917,
+      "Train_R2": 0.991263172594686,
+      "Overfit_Ratio": 0.43489192120095505,
+      "CV_MAE": 19.317882271194676,
+      "CV_MAE_std": 3.7973577453659537
+    },
+    {
+      "model": "Monthly Random Forest",
+      "MAE": 30.534073279475095,
+      "RMSE": 42.33510252155044,
+      "R2_price": 0.9623534337870279,
+      "MAPE_pct": 2.299608830546852,
+      "Change_R2": 0.030716222111093816,
+      "Train_MAE": 10.426902127041934,
+      "Train_R2": 0.9935118577427698,
+      "Overfit_Ratio": 0.34148415219959743,
+      "CV_MAE": 16.312779339361594,
+      "CV_MAE_std": 3.259726413425031
+    },
+    {
+      "model": "Monthly Gradient Boosting",
+      "MAE": 34.11672584402354,
+      "RMSE": 42.48248735575014,
+      "R2_price": 0.9620908530499606,
+      "MAPE_pct": 2.5697099800692307,
+      "Change_R2": 0.026449073074308105,
+      "Train_MAE": 3.2697344652373324,
+      "Train_R2": 0.9993286502283023,
+      "Overfit_Ratio": 0.09583963244849635,
+      "CV_MAE": 19.436419371638795,
+      "CV_MAE_std": 2.9895774143259692
+    },
+    {
+      "model": "Monthly Ensemble",
+      "MAE": 28.98993450800946,
+      "RMSE": 40.17528683755582,
+      "R2_price": 0.9660966892345354,
+      "MAPE_pct": 2.2108395073337466,
+      "Change_R2": 0.10472867629157878,
+      "Train_MAE": 0,
+      "Overfit_Ratio": 0,
+      "CV_MAE": 0,
+      "CV_MAE_std": 0
+    },
+    {
+      "model": "Daily Ridge",
+      "MAE": 4.244058677833138,
+      "RMSE": 6.481864485340161,
+      "R2_price": 0.9989424576969578,
+      "MAPE_pct": 0.3157475747757207,
+      "Return_R2": 0.02940067341052066,
+      "Train_MAE": 1.961575089185741,
+      "Overfit_Ratio": 0.46219320657160423,
+      "CV_MAE": 2.090934211872285,
+      "CV_MAE_std": 0.9722296359950571
+    },
+    {
+      "model": "Daily Random Forest",
+      "MAE": 4.141073512036104,
+      "RMSE": 6.515457121951741,
+      "R2_price": 0.9989314677445476,
+      "MAPE_pct": 0.3083054873296878,
+      "Return_R2": 0.016309884544306708,
+      "Train_MAE": 1.9002255126501302,
+      "Overfit_Ratio": 0.45887268292318184,
+      "CV_MAE": 2.112786168102053,
+      "CV_MAE_std": 0.9682163422813447
+    },
+    {
+      "model": "Daily Gradient Boosting",
+      "MAE": 4.219704648329325,
+      "RMSE": 6.544584203399854,
+      "R2_price": 0.9989218927314678,
+      "MAPE_pct": 0.31431247013422897,
+      "Return_R2": 0.007536626177368055,
+      "Train_MAE": 1.8610511502674312,
+      "Overfit_Ratio": 0.44103824920643747,
+      "CV_MAE": 2.113938424808636,
+      "CV_MAE_std": 0.9530456632612947
+    }
+  ],
+  "feature_cols": [
+    "produccion",
+    "importaciones",
+    "exportaciones_totales",
+    "consumo_nacional_aparente",
+    "inventario_final",
+    "oferta_total",
+    "demanda_total",
+    "supply_demand_ratio",
+    "demand_pressure",
+    "excess_supply",
+    "inventory_to_consumption",
+    "inventory_months",
+    "net_exports",
+    "production_share",
+    "month_sin",
+    "month_cos",
+    "usd_mxn",
+    "ice_no11",
+    "ice_no16",
+    "wti",
+    "brl_usd",
+    "mx_sugar_usd",
+    "premium_vs_world"
+  ],
+  "monthly_features": [
+    "produccion",
+    "importaciones",
+    "exportaciones_totales",
+    "consumo_nacional_aparente",
+    "inventario_final",
+    "oferta_total",
+    "demanda_total",
+    "supply_demand_ratio",
+    "demand_pressure",
+    "excess_supply",
+    "inventory_to_consumption",
+    "inventory_months",
+    "net_exports",
+    "production_share",
+    "month_sin",
+    "month_cos",
+    "usd_mxn",
+    "ice_no11",
+    "ice_no16",
+    "wti",
+    "brl_usd",
+    "mx_sugar_usd",
+    "premium_vs_world"
+  ],
+  "balance_features_used": [
+    "produccion",
+    "importaciones",
+    "exportaciones_totales",
+    "consumo_nacional_aparente",
+    "inventario_final",
+    "oferta_total",
+    "demanda_total",
+    "supply_demand_ratio",
+    "demand_pressure",
+    "excess_supply",
+    "inventory_to_consumption",
+    "inventory_months",
+    "net_exports",
+    "production_share"
+  ],
+  "latest_actual_price": 1155.37,
+  "pricing_formula": "Price = f(Demand/Supply) where Supply=Prod+Imports+Inv, Demand=Consumption+Exports",
+  "clip_bounds": [
+    -0.06859745163339462,
+    0.08935044978359052
+  ],
+  "residual_percentiles": {
+    "p10": -30.35964636034966,
+    "p25": -11.831862110764973,
+    "p75": 22.52326564329229,
+    "p90": 68.35591657235213
+  },
+  "ensemble_weights": {
+    "Ridge": 0.3521,
+    "Random Forest": 0.3419,
+    "Gradient Boosting": 0.306
+  }
+}

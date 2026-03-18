@@ -1,0 +1,384 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --agro-green-dark: #1a3a2a;
+    --agro-green: #2d6a4f;
+    --agro-green-light: #40916c;
+    --agro-green-pale: #d8f3dc;
+    --agro-gold: #b8860b;
+    --agro-gold-light: #daa520;
+    --agro-cream: #fdfaf5;
+    --agro-warm-white: #f8f5f0;
+    --agro-brown: #5c3d2e;
+    --agro-bg: #f8f6f2;
+    --agro-surface: #ffffff;
+    --agro-surface-alt: #f1ede6;
+    --agro-border: #e2ddd4;
+    --agro-text: #2c3e2d;
+    --agro-text-muted: #6b7f6e;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    font-family: 'Inter', sans-serif;
+    background: var(--agro-bg);
+    color: var(--agro-text);
+    margin: 0;
+    padding: 0;
+}
+
+/* ---- Top Header Bar ---- */
+.header-bar {
+    background: linear-gradient(135deg, #1a3a2a 0%, #2d6a4f 100%);
+    padding: 14px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 12px rgba(26, 58, 42, 0.18);
+}
+
+.header-bar .logo-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header-bar .logo-section img {
+    max-height: 40px;
+}
+
+.header-bar .logo-section .brand {
+    color: #d8f3dc;
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.header-bar .product-select {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(216, 243, 220, 0.3);
+    color: #d8f3dc;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.85rem;
+}
+
+.header-bar .product-select option {
+    background: #1a3a2a;
+    color: #d8f3dc;
+}
+
+.header-subtitle {
+    background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%);
+    padding: 4px 32px 6px;
+    color: rgba(216, 243, 220, 0.65);
+    font-size: 0.7rem;
+    letter-spacing: 0.5px;
+}
+
+/* ---- Navigation Tabs ---- */
+.nav-bar {
+    background: var(--agro-surface);
+    padding: 8px 32px;
+    display: flex;
+    gap: 6px;
+    border-bottom: 1px solid var(--agro-border);
+    flex-wrap: wrap;
+}
+
+.nav-btn {
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    font-size: 0.82rem;
+    cursor: pointer;
+    border: 1px solid var(--agro-border);
+    background: var(--agro-surface-alt);
+    color: var(--agro-green-dark);
+    transition: all 0.2s ease;
+    text-decoration: none;
+}
+
+.nav-btn:hover {
+    background: var(--agro-border);
+    border-color: var(--agro-green);
+    color: var(--agro-green-dark);
+    text-decoration: none;
+}
+
+.nav-btn.active {
+    background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%);
+    color: #ffffff;
+    border-color: transparent;
+}
+
+/* ---- Main Content ---- */
+.main-content {
+    padding: 24px 32px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* ---- KPI Cards ---- */
+.kpi-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+
+.kpi-card {
+    background: var(--agro-surface);
+    border: 1px solid var(--agro-border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    flex: 1;
+    min-width: 160px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    transition: all 0.2s ease;
+}
+
+.kpi-card:hover {
+    border-color: var(--agro-green-light);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(45, 106, 79, 0.1);
+}
+
+.kpi-label {
+    color: var(--agro-text-muted);
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 4px;
+}
+
+.kpi-value {
+    color: var(--agro-text);
+    font-weight: 700;
+    font-size: 1.3rem;
+}
+
+.kpi-delta {
+    font-size: 0.78rem;
+    font-weight: 500;
+    margin-top: 2px;
+}
+
+.kpi-delta.positive { color: #2d6a4f; }
+.kpi-delta.negative { color: #a0522d; }
+
+/* ---- Page Titles ---- */
+h1.page-title {
+    color: var(--agro-green-dark);
+    font-weight: 700;
+    font-size: 1.6rem;
+    letter-spacing: -0.3px;
+    margin: 0 0 6px 0;
+}
+
+h2.section-title {
+    color: var(--agro-green-dark);
+    font-weight: 700;
+    font-size: 1.15rem;
+    text-align: center;
+    margin: 24px 0 14px;
+}
+
+p.page-desc {
+    color: var(--agro-text-muted);
+    font-size: 0.88rem;
+    margin: 0 0 20px 0;
+}
+
+/* ---- Info / Success / Warning Boxes ---- */
+.info-box {
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    border-radius: 10px;
+    padding: 12px 18px;
+    color: #1b5e20;
+    font-size: 0.85rem;
+    margin-bottom: 16px;
+}
+
+.success-box {
+    background: #e8f5e9;
+    border: 1px solid #66bb6a;
+    border-radius: 10px;
+    padding: 12px 18px;
+    color: #1b5e20;
+    font-size: 0.85rem;
+    margin-bottom: 16px;
+    font-weight: 500;
+}
+
+.warning-box {
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+    border-radius: 10px;
+    padding: 12px 18px;
+    color: #e65100;
+    font-size: 0.85rem;
+    margin-bottom: 16px;
+}
+
+/* ---- Statistics Sidebar ---- */
+.stats-box {
+    background: var(--agro-surface);
+    border: 1px solid var(--agro-border);
+    border-radius: 12px;
+    padding: 18px;
+}
+
+.stats-box p {
+    margin: 6px 0;
+    font-size: 0.85rem;
+    color: var(--agro-text);
+}
+
+.stats-box strong {
+    color: var(--agro-green-dark);
+}
+
+/* ---- Tables ---- */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table {
+    border: 1px solid var(--agro-green) !important;
+    border-radius: 8px;
+}
+
+.dash-table-container .dash-header {
+    background-color: var(--agro-surface-alt) !important;
+    color: #000 !important;
+    font-weight: 600 !important;
+    border: 1px solid #c4beb2 !important;
+}
+
+.dash-table-container .dash-cell {
+    background-color: var(--agro-surface) !important;
+    color: #000 !important;
+    border: 1px solid var(--agro-border) !important;
+    text-align: center !important;
+}
+
+/* ---- Buttons ---- */
+.btn-primary {
+    background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%);
+    border: none;
+    border-radius: 10px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #ffffff;
+    padding: 12px 28px;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    transition: all 0.2s ease;
+    width: 100%;
+}
+
+.btn-primary:hover {
+    box-shadow: 0 4px 20px rgba(45, 106, 79, 0.35);
+    transform: translateY(-1px);
+}
+
+/* ---- Slider Labels ---- */
+.rc-slider-handle {
+    border-color: var(--agro-green) !important;
+    background-color: var(--agro-green) !important;
+}
+
+.rc-slider-track {
+    background-color: var(--agro-green-light) !important;
+}
+
+/* ---- Dropdown Overrides ---- */
+.Select-control {
+    background: var(--agro-surface) !important;
+    border-color: var(--agro-border) !important;
+    border-radius: 8px !important;
+}
+
+.Select-value-label {
+    color: var(--agro-text) !important;
+}
+
+/* ---- Separator ---- */
+hr.section-sep {
+    border: none;
+    border-top: 1px solid var(--agro-border);
+    margin: 24px 0;
+}
+
+/* ---- Two Column Layout ---- */
+.two-col {
+    display: flex;
+    gap: 24px;
+}
+
+.two-col > .col-main { flex: 3; }
+.two-col > .col-side { flex: 1; min-width: 220px; }
+
+/* ---- Footer ---- */
+.footer {
+    text-align: center;
+    padding: 24px 0;
+    border-top: 1px solid var(--agro-border);
+    margin-top: 32px;
+}
+
+.footer .brand-name {
+    color: #2d6a4f;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin: 0 0 4px 0;
+}
+
+.footer .brand-sub {
+    color: #6b7f6e;
+    font-size: 0.7rem;
+    letter-spacing: 0.5px;
+    margin: 0;
+}
+
+/* ---- Tabs ---- */
+.custom-tabs .tab-list {
+    display: flex;
+    gap: 4px;
+    background: var(--agro-surface-alt);
+    border-radius: 10px;
+    padding: 4px;
+    margin-bottom: 16px;
+}
+
+.custom-tabs .tab-item {
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 0.85rem;
+    color: var(--agro-text-muted);
+    border: none;
+    background: transparent;
+    font-family: 'Inter', sans-serif;
+}
+
+.custom-tabs .tab-item.active {
+    background: var(--agro-green);
+    color: white;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 900px) {
+    .header-bar { padding: 10px 16px; }
+    .nav-bar { padding: 8px 16px; }
+    .main-content { padding: 16px; }
+    .kpi-row { flex-direction: column; }
+    .two-col { flex-direction: column; }
+}

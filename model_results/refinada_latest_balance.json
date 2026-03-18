@@ -1,0 +1,22 @@
+{
+  "produccion": 447574.0,
+  "importaciones": 4546.0,
+  "exportaciones_totales": 24756.0,
+  "consumo_nacional_aparente": 348010.0,
+  "inventario_inicial": 480512.0,
+  "inventario_final": 547247.0,
+  "oferta_total": 932631.0,
+  "demanda_total": 385384.0,
+  "net_exports": 20210.0,
+  "supply_demand_ratio": 2.420004463080979,
+  "inventory_to_consumption": 1.5725036636878251,
+  "production_share": 0.479904699715107,
+  "excess_supply": 559866.0,
+  "demand_pressure": 0.3996924832088112,
+  "inventory_months": 18.870043964253902,
+  "usd_mxn": 17.623057142857142,
+  "ice_no11": 14.78590909090909,
+  "ice_no16": 33.37454545454545,
+  "wti": 81.08166666666666,
+  "brl_usd": 5.24082
+}

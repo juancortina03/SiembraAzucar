@@ -1,0 +1,12 @@
+pandas
+numpy
+scikit-learn
+plotly
+dash
+requests
+beautifulsoup4
+lxml
+openpyxl
+pdfplumber
+fredapi
+python-dotenv
