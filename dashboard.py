@@ -12,6 +12,7 @@ Run:  py dashboard.py
 """
 
 import base64
+import io
 import json
 import os
 import pickle
@@ -271,6 +272,11 @@ header = html.Div([
             clearable=False,
             style={"width": "220px", "color": "#1a3a2a"},
         ),
+        html.Button(
+            "\u2B07 Descargar Excel",
+            id="btn-download-excel",
+            className="download-btn",
+        ),
     ], className="header-bar"),
     html.Div("Fuentes: SNIIM, CONADESUCA, FRED & Banxico  |  Modelos Predictivos de Precio", className="header-subtitle"),
 ])
@@ -281,6 +287,7 @@ nav_bar = html.Div(id="nav-bar", className="nav-bar")
 # -- Layout --
 app.layout = html.Div([
     dcc.Location(id="url", refresh=False),
+    dcc.Download(id="download-excel"),
     header,
     nav_bar,
     html.Div(id="page-content", className="main-content"),
@@ -2266,6 +2273,71 @@ def update_fi_chart(selected_model, product):
     )
     fig_fi.update_layout(**AGRO_LAYOUT, yaxis_title="", xaxis_title="Importancia", legend=dict(font=LEGEND_FONT))
     return dcc.Graph(figure=fig_fi)
+
+
+# ---------------------------------------------------------------
+# Excel Download callback
+# ---------------------------------------------------------------
+@callback(
+    Output("download-excel", "data"),
+    Input("btn-download-excel", "n_clicks"),
+    State("product-select", "value"),
+    prevent_initial_call=True,
+)
+def download_excel(n_clicks, product):
+    if not n_clicks:
+        return no_update
+
+    raw_df = load_raw_prices()
+    product_df = raw_df[raw_df["product_type"] == product].copy()
+    model_data = load_model_outputs(product)
+    label = PRODUCT_LABELS.get(product, product)
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        # Sheet 1: Daily prices
+        if not product_df.empty:
+            export_prices = product_df[["date", "price", "product_type"]].copy()
+            export_prices["date"] = export_prices["date"].dt.strftime("%Y-%m-%d")
+            export_prices.to_excel(writer, sheet_name="Precios Diarios", index=False)
+
+        # Sheet 2: Forecast
+        if "forecast" in model_data:
+            fc = model_data["forecast"].copy()
+            if "date" in fc.columns:
+                fc["date"] = pd.to_datetime(fc["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            fc.to_excel(writer, sheet_name="Pronostico", index=False)
+
+        # Sheet 3: Monthly forecast
+        if "monthly_forecast" in model_data:
+            mf = model_data["monthly_forecast"].copy()
+            mf.to_excel(writer, sheet_name="Pronostico Mensual", index=False)
+
+        # Sheet 4: Model predictions (actual vs predicted)
+        if "predictions" in model_data:
+            pred = model_data["predictions"].copy()
+            if "date" in pred.columns:
+                pred["date"] = pd.to_datetime(pred["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            pred.to_excel(writer, sheet_name="Predicciones Modelo", index=False)
+
+        # Sheet 5: Model metrics
+        if "metrics" in model_data:
+            model_data["metrics"].to_excel(writer, sheet_name="Metricas Modelo", index=False)
+
+        # Sheet 6: Feature importance
+        if "feature_importance" in model_data:
+            model_data["feature_importance"].to_excel(writer, sheet_name="Importancia Variables", index=False)
+
+        # Sheet 7: Balance data
+        if "balance" in model_data:
+            model_data["balance"].to_excel(writer, sheet_name="Balance Azucarero", index=False)
+
+        # Sheet 8: External market data
+        if "external" in model_data:
+            model_data["external"].to_excel(writer, sheet_name="Datos Mercado Externo", index=False)
+
+    buf.seek(0)
+    return dcc.send_bytes(buf.getvalue(), f"sugar_focars_{product}.xlsx")
 
 
 # ---------------------------------------------------------------

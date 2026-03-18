@@ -56,6 +56,25 @@ html, body {
     font-weight: 600;
 }
 
+.download-btn {
+    background: rgba(184, 134, 11, 0.9);
+    color: #fff;
+    border: 1px solid rgba(218, 165, 32, 0.5);
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: 0.3px;
+}
+
+.download-btn:hover {
+    background: rgba(218, 165, 32, 1);
+    box-shadow: 0 2px 8px rgba(184, 134, 11, 0.4);
+}
+
 .header-bar .product-select {
     background: rgba(255,255,255,0.12);
     border: 1px solid rgba(216, 243, 220, 0.3);
