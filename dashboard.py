@@ -1929,6 +1929,14 @@ def page_montecarlo():
                 ),
             ], className="mc-control"),
             html.Div([
+                html.Label("Ventana de Estimacion (ciclos)"),
+                dcc.Slider(
+                    id="mc-est-window", min=4, max=11, step=1, value=11,
+                    marks={4: "4", 6: "6", 8: "8", 11: "Todos"},
+                    tooltip={"placement": "bottom", "always_visible": False},
+                ),
+            ], className="mc-control"),
+            html.Div([
                 html.Button(
                     "Ejecutar Simulacion",
                     id="mc-run-btn",
@@ -1965,12 +1973,16 @@ def page_montecarlo():
     State("mc-n-cycles", "value"),
     State("mc-prod-shock", "value"),
     State("mc-world-shock", "value"),
+    State("mc-est-window", "value"),
     prevent_initial_call=True,
 )
-def run_monte_carlo(n_clicks, price_series, n_sims, n_cycles, prod_shock, world_shock):
+def run_monte_carlo(n_clicks, price_series, n_sims, n_cycles, prod_shock, world_shock, est_window):
     """Run Monte Carlo simulation and render all charts + tables."""
     if not n_clicks:
         return no_update, no_update
+
+    # estimation_window=None means use all history (slider max = 11 = all)
+    ew = None if (est_window is None or est_window >= 11) else int(est_window)
 
     try:
         result = run_simulation(
@@ -1979,6 +1991,7 @@ def run_monte_carlo(n_clicks, price_series, n_sims, n_cycles, prod_shock, world_
             production_shock=(prod_shock or 0) / 100.0,
             world_balance_shock=(world_shock or 0) / 100.0,
             price_series=price_series or "referencia",
+            estimation_window=ew,
         )
     except Exception as e:
         return no_update, html.Div(f"Error en simulacion: {e}", className="warning-box")
@@ -1992,22 +2005,24 @@ def run_monte_carlo(n_clicks, price_series, n_sims, n_cycles, prod_shock, world_
     sections = []
 
     # ---- Methodology Info Box ----
-    process_name = meth["process"]
-    rho = meth["autocorrelation_lag1"]
-    dist_fit = meth["distribution_fit"]
-    sections.append(html.Div([
-        html.Strong("Proceso: "), f"{process_name}  |  ",
-        html.Strong("Distribucion: "), f"{dist_fit}  |  ",
-        html.Strong("Autocorrelacion(1): "), f"{rho:.3f}  |  ",
-        html.Strong("Drift: "), f"{meth['drift']:.4f}  |  ",
-        html.Strong("Sigma: "), f"{meth['sigma']:.4f}  |  ",
-        html.Strong("Precio Inicial: "), f"${meth['initial_price']:,.0f}",
-        *(
-            [html.Br(), html.Strong("Kappa: "), f"{meth['mean_reversion_speed']:.4f}  |  ",
-             html.Strong("Theta: "), f"${meth['long_run_mean']:,.0f}"]
-            if meth.get("mean_reversion_speed") else []
-        ),
-    ], className="info-box"))
+    window_label = f"{meth['estimation_window']} ciclos" if meth.get("estimation_window", 11) < 11 else "Todos"
+    info_children = [
+        html.Strong("Proceso: "), f"{meth['process']}  |  ",
+        html.Strong("Theta (Media LP): "), f"${meth['long_run_mean']:,.0f}  |  ",
+        html.Strong("Kappa (Reversion): "), f"{meth['mean_reversion_speed']:.4f}  |  ",
+        html.Strong("Sigma: "), f"${meth['sigma']:,.0f}  |  ",
+        html.Strong("Precio Inicial: "), f"${meth['initial_price']:,.0f}  |  ",
+        html.Strong("Ventana: "), f"{window_label}",
+    ]
+    sections.append(html.Div(info_children, className="info-box"))
+
+    # ---- Drift cap warning ----
+    if meth.get("drift_capped"):
+        sections.append(html.Div(
+            "Drift ajustado al limite -- El drift implicito excedia los limites de seguridad "
+            "(max +20%, min -10%) y fue recortado para evitar proyecciones irrealistas.",
+            className="warning-box",
+        ))
 
     # ---- Summary Statistics Table ----
     sections.append(html.H2("Estadisticas de la Simulacion", className="section-title"))
@@ -2311,12 +2326,14 @@ def run_monte_carlo(n_clicks, price_series, n_sims, n_cycles, prod_shock, world_
     State("mc-n-cycles", "value"),
     State("mc-prod-shock", "value"),
     State("mc-world-shock", "value"),
+    State("mc-est-window", "value"),
     prevent_initial_call=True,
 )
-def download_mc_excel(n_clicks, price_series, n_sims, n_cycles, prod_shock, world_shock):
+def download_mc_excel(n_clicks, price_series, n_sims, n_cycles, prod_shock, world_shock, est_window):
     """Re-run simulation and download Excel."""
     if not n_clicks:
         return no_update
+    ew = None if (est_window is None or est_window >= 11) else int(est_window)
     try:
         result = run_simulation(
             n_simulations=min(n_sims or 10000, 10000),
@@ -2324,6 +2341,7 @@ def download_mc_excel(n_clicks, price_series, n_sims, n_cycles, prod_shock, worl
             production_shock=(prod_shock or 0) / 100.0,
             world_balance_shock=(world_shock or 0) / 100.0,
             price_series=price_series or "referencia",
+            estimation_window=ew,
         )
         excel_bytes = results_to_excel_bytes(result)
         return dcc.send_bytes(excel_bytes, "monte_carlo_resultados.xlsx")
