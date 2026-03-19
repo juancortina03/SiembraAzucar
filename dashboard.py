@@ -24,12 +24,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dash import Dash, Input, Output, State, callback, dcc, html, dash_table, no_update, ctx
 from sugar_price_model import EnsembleModel
+from monte_carlo_engine import run_simulation, results_to_excel_bytes
 
 # ---------------------------------------------------------------
 # Basic Auth (password-protected access)
 # ---------------------------------------------------------------
 DASH_USER = os.environ.get("DASH_USER", "admin")
-DASH_PASS = os.environ.get("DASH_PASS", "sugar2026")
+DASH_PASS = os.environ.get("DASH_PASS", "1234")
 
 
 class _ModelUnpickler(pickle.Unpickler):
@@ -100,6 +101,7 @@ PAGE_OPTIONS = [
     ("ml", "Precision del Modelo"),
     ("forecast", "Proyeccion de Precios"),
     ("scenario", "Analisis de Escenarios"),
+    ("montecarlo", "Monte Carlo"),
     ("features", "Factores Clave"),
     ("market", "Inteligencia de Mercado"),
 ]
@@ -290,6 +292,8 @@ nav_bar = html.Div(id="nav-bar", className="nav-bar")
 app.layout = html.Div([
     dcc.Location(id="url", refresh=False),
     dcc.Download(id="download-excel"),
+    dcc.Download(id="download-mc-excel"),
+    dcc.Store(id="mc-results-store"),
     header,
     nav_bar,
     html.Div(id="page-content", className="main-content"),
@@ -341,6 +345,8 @@ def render_page(pathname, product):
         return page_forecast(product, product_df, model_data, has_model)
     elif page == "scenario":
         return page_scenario(product, product_df, model_data, has_model)
+    elif page == "montecarlo":
+        return page_montecarlo()
     elif page == "features":
         return page_features(product, product_df, model_data, has_model)
     elif page == "market":
@@ -1852,6 +1858,477 @@ def page_features(product, product_df, model_data, has_model):
             sections.append(dcc.Graph(figure=fig_corr))
 
     return html.Div(sections)
+
+
+# ---------------------------------------------------------------
+# PAGE: Monte Carlo Simulation
+# ---------------------------------------------------------------
+def page_montecarlo():
+    """Interactive Monte Carlo price simulation page."""
+    return html.Div([
+        html.H1("Simulacion Monte Carlo -- Precios de Azucar", className="page-title"),
+        html.P(
+            "Simulacion estocastica de precios futuros basada en datos historicos de CONADESUCA. "
+            "Ajuste los parametros de escenario y presione 'Ejecutar Simulacion' para generar "
+            "10,000 trayectorias de precios.",
+            className="page-desc",
+        ),
+
+        # ---- Controls ----
+        html.Div([
+            html.Div([
+                html.Label("Serie de Precios"),
+                dcc.Dropdown(
+                    id="mc-price-series",
+                    options=[
+                        {"label": "Precio Referencia Estandar", "value": "referencia"},
+                        {"label": "Precio Mayoreo 23 Mercados", "value": "mayoreo"},
+                    ],
+                    value="referencia",
+                    clearable=False,
+                    style={"width": "100%"},
+                ),
+            ], className="mc-control"),
+            html.Div([
+                html.Label("Simulaciones"),
+                dcc.Dropdown(
+                    id="mc-n-sims",
+                    options=[
+                        {"label": "1,000", "value": 1000},
+                        {"label": "5,000", "value": 5000},
+                        {"label": "10,000", "value": 10000},
+                        {"label": "25,000", "value": 25000},
+                        {"label": "50,000", "value": 50000},
+                    ],
+                    value=10000,
+                    clearable=False,
+                    style={"width": "100%"},
+                ),
+            ], className="mc-control"),
+            html.Div([
+                html.Label("Ciclos a Pronosticar"),
+                dcc.Slider(
+                    id="mc-n-cycles", min=1, max=5, step=1, value=3,
+                    marks={i: str(i) for i in range(1, 6)},
+                ),
+            ], className="mc-control"),
+            html.Div([
+                html.Label("Choque Produccion (%)"),
+                dcc.Slider(
+                    id="mc-prod-shock", min=-30, max=30, step=1, value=0,
+                    marks={i: f"{i}%" for i in [-30, -15, 0, 15, 30]},
+                    tooltip={"placement": "bottom", "always_visible": False},
+                ),
+            ], className="mc-control"),
+            html.Div([
+                html.Label("Choque Balance Mundial (%)"),
+                dcc.Slider(
+                    id="mc-world-shock", min=-20, max=20, step=1, value=0,
+                    marks={i: f"{i}%" for i in [-20, -10, 0, 10, 20]},
+                    tooltip={"placement": "bottom", "always_visible": False},
+                ),
+            ], className="mc-control"),
+            html.Div([
+                html.Button(
+                    "Ejecutar Simulacion",
+                    id="mc-run-btn",
+                    className="mc-run-btn",
+                    n_clicks=0,
+                ),
+                html.Button(
+                    "Descargar Excel",
+                    id="mc-download-btn",
+                    className="mc-download-btn",
+                    n_clicks=0,
+                ),
+            ], className="mc-control mc-buttons"),
+        ], className="mc-controls-bar"),
+
+        # ---- Loading + Results ----
+        dcc.Loading(
+            id="mc-loading",
+            type="circle",
+            color="#2d6a4f",
+            children=html.Div(id="mc-output", children=[
+                html.Div("Presione 'Ejecutar Simulacion' para iniciar.", className="info-box"),
+            ]),
+        ),
+    ])
+
+
+@callback(
+    Output("mc-results-store", "data"),
+    Output("mc-output", "children"),
+    Input("mc-run-btn", "n_clicks"),
+    State("mc-price-series", "value"),
+    State("mc-n-sims", "value"),
+    State("mc-n-cycles", "value"),
+    State("mc-prod-shock", "value"),
+    State("mc-world-shock", "value"),
+    prevent_initial_call=True,
+)
+def run_monte_carlo(n_clicks, price_series, n_sims, n_cycles, prod_shock, world_shock):
+    """Run Monte Carlo simulation and render all charts + tables."""
+    if not n_clicks:
+        return no_update, no_update
+
+    try:
+        result = run_simulation(
+            n_simulations=n_sims or 10000,
+            n_cycles=n_cycles or 3,
+            production_shock=(prod_shock or 0) / 100.0,
+            world_balance_shock=(world_shock or 0) / 100.0,
+            price_series=price_series or "referencia",
+        )
+    except Exception as e:
+        return no_update, html.Div(f"Error en simulacion: {e}", className="warning-box")
+
+    meth = result["methodology"]
+    fan = result["fan_chart"]
+    summary = result["summary"]
+    dist = result["distribution"]
+    sensitivity = result.get("sensitivity", [])
+
+    sections = []
+
+    # ---- Methodology Info Box ----
+    process_name = meth["process"]
+    rho = meth["autocorrelation_lag1"]
+    dist_fit = meth["distribution_fit"]
+    sections.append(html.Div([
+        html.Strong("Proceso: "), f"{process_name}  |  ",
+        html.Strong("Distribucion: "), f"{dist_fit}  |  ",
+        html.Strong("Autocorrelacion(1): "), f"{rho:.3f}  |  ",
+        html.Strong("Drift: "), f"{meth['drift']:.4f}  |  ",
+        html.Strong("Sigma: "), f"{meth['sigma']:.4f}  |  ",
+        html.Strong("Precio Inicial: "), f"${meth['initial_price']:,.0f}",
+        *(
+            [html.Br(), html.Strong("Kappa: "), f"{meth['mean_reversion_speed']:.4f}  |  ",
+             html.Strong("Theta: "), f"${meth['long_run_mean']:,.0f}"]
+            if meth.get("mean_reversion_speed") else []
+        ),
+    ], className="info-box"))
+
+    # ---- Summary Statistics Table ----
+    sections.append(html.H2("Estadisticas de la Simulacion", className="section-title"))
+
+    table_rows = []
+    for s in summary:
+        row = {
+            "Horizonte": s["cycle_label"],
+            "Media": f"${s['mean']:,.0f}",
+            "Mediana": f"${s['median']:,.0f}",
+            "Desv. Est.": f"${s['std']:,.0f}",
+            "P5": f"${s['p5']:,.0f}",
+            "P25": f"${s['p25']:,.0f}",
+            "P75": f"${s['p75']:,.0f}",
+            "P95": f"${s['p95']:,.0f}",
+        }
+        for th in [15000, 18000, 20000]:
+            key = f"prob_above_{th}"
+            if key in s:
+                row[f"P(>{th/1000:.0f}k)"] = f"{s[key]:.1f}%"
+        table_rows.append(row)
+
+    table_df = pd.DataFrame(table_rows)
+    sections.append(
+        dash_table.DataTable(
+            data=table_df.to_dict("records"),
+            columns=[{"name": c, "id": c} for c in table_df.columns],
+            style_header={
+                "backgroundColor": "#f8f6f2", "color": "#000",
+                "fontWeight": "600", "border": "1px solid #c4beb2",
+                "fontFamily": "Inter, sans-serif", "textAlign": "center",
+            },
+            style_cell={
+                "textAlign": "center", "padding": "8px 12px",
+                "border": "1px solid #e2ddd4",
+                "fontFamily": "Inter, sans-serif", "fontSize": "13px",
+                "color": "#000",
+            },
+            style_data_conditional=[
+                # Color prob badges
+                {"if": {"column_id": c, "filter_query": f'{{{c}}} contains "%" && {{{c}}} < "30"'},
+                 "backgroundColor": "#d4edda", "color": "#155724"}
+                for c in ["P(>15k)", "P(>18k)", "P(>20k)"]
+            ] + [
+                {"if": {"column_id": c, "filter_query": f'{{{c}}} contains "%" && {{{c}}} >= "60"'},
+                 "backgroundColor": "#f8d7da", "color": "#721c24"}
+                for c in ["P(>15k)", "P(>18k)", "P(>20k)"]
+            ],
+            style_table={"overflowX": "auto"},
+        )
+    )
+
+    # ---- Fan Chart ----
+    sections.append(html.H2("Abanico de Trayectorias de Precio", className="section-title"))
+
+    fig_fan = go.Figure()
+
+    # Historical line
+    fig_fan.add_trace(go.Scatter(
+        x=fan["historical_years"], y=fan["historical_prices"],
+        mode="lines+markers", name="Historico",
+        line=dict(color="#2d6a4f", width=3),
+        marker=dict(size=6, color="#2d6a4f"),
+    ))
+
+    # Connect last historical to first forecast
+    all_years = fan["historical_years"] + fan["forecast_years"]
+    last_hist = fan["historical_prices"][-1]
+
+    # P5-P95 band (lightest)
+    upper_95 = [last_hist] + fan["p95"]
+    lower_5 = [last_hist] + fan["p5"]
+    fc_years = [fan["historical_years"][-1]] + fan["forecast_years"]
+
+    fig_fan.add_trace(go.Scatter(
+        x=fc_years, y=upper_95,
+        mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip",
+    ))
+    fig_fan.add_trace(go.Scatter(
+        x=fc_years, y=lower_5,
+        mode="lines", line=dict(width=0),
+        fill="tonexty", fillcolor="rgba(45, 106, 79, 0.1)",
+        name="IC 90% (P5-P95)",
+    ))
+
+    # P25-P75 band (medium)
+    upper_75 = [last_hist] + fan["p75"]
+    lower_25 = [last_hist] + fan["p25"]
+    fig_fan.add_trace(go.Scatter(
+        x=fc_years, y=upper_75,
+        mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip",
+    ))
+    fig_fan.add_trace(go.Scatter(
+        x=fc_years, y=lower_25,
+        mode="lines", line=dict(width=0),
+        fill="tonexty", fillcolor="rgba(45, 106, 79, 0.22)",
+        name="IC 50% (P25-P75)",
+    ))
+
+    # Median forecast line
+    median_line = [last_hist] + fan["p50"]
+    fig_fan.add_trace(go.Scatter(
+        x=fc_years, y=median_line,
+        mode="lines+markers", name="Mediana Pronostico",
+        line=dict(color="#b8860b", width=3, dash="dash"),
+        marker=dict(size=7, color="#b8860b"),
+    ))
+
+    # Sample paths (faint)
+    for i, path in enumerate(fan["sample_paths"][:20]):
+        path_vals = [last_hist] + path
+        fig_fan.add_trace(go.Scatter(
+            x=fc_years, y=path_vals,
+            mode="lines", line=dict(color="rgba(160, 82, 45, 0.08)", width=1),
+            showlegend=(i == 0), name="Trayectorias de Muestra" if i == 0 else None,
+            hoverinfo="skip",
+        ))
+
+    # Vertical separator (use shape + annotation instead of add_vline for string x-axis)
+    last_hist_idx = len(fan["historical_years"]) - 1
+    fig_fan.add_shape(
+        type="line", x0=last_hist_idx, x1=last_hist_idx, y0=0, y1=1,
+        xref="x", yref="paper",
+        line=dict(color="#888", width=1, dash="dot"),
+    )
+    fig_fan.add_annotation(
+        x=last_hist_idx, y=1.02, xref="x", yref="paper",
+        text="Inicio Pronostico", showarrow=False,
+        font=dict(size=10, color="#666"),
+    )
+
+    price_label = "Precio Referencia Estandar" if price_series == "referencia" else "Precio Mayoreo 23 Mercados"
+    fig_fan.update_layout(
+        **AGRO_LAYOUT, height=520,
+        title=f"Simulacion Monte Carlo -- {price_label}",
+        xaxis_title="Ciclo Azucarero",
+        yaxis_title="Precio (MXN/ton)",
+        xaxis_tickangle=-45,
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            bgcolor="rgba(0,0,0,0)", font=LEGEND_FONT,
+        ),
+        yaxis_tickformat="$,.0f",
+    )
+    sections.append(dcc.Graph(figure=fig_fan))
+
+    # ---- Distribution Histograms ----
+    sections.append(html.H2("Distribucion de Precios por Horizonte", className="section-title"))
+
+    n_horizons = len(summary)
+    from plotly.subplots import make_subplots
+    fig_dist = make_subplots(
+        rows=1, cols=n_horizons,
+        subplot_titles=[f"Ciclo +{h+1}" for h in range(n_horizons)],
+        shared_yaxes=True,
+    )
+
+    for h in range(n_horizons):
+        hkey = f"horizon_{h+1}"
+        if hkey not in dist:
+            continue
+        bins = dist[hkey]["bins"]
+        counts = dist[hkey]["counts"]
+        s = summary[h]
+
+        fig_dist.add_trace(go.Bar(
+            x=bins, y=counts,
+            marker_color="rgba(45, 106, 79, 0.6)",
+            name=f"Ciclo +{h+1}",
+            showlegend=False,
+        ), row=1, col=h+1)
+
+        # Vertical lines for P5, P50, P95 (use shapes for compatibility)
+        xaxis_ref = "x" if h == 0 else f"x{h+1}"
+        yaxis_ref = "y" if h == 0 else f"y{h+1}"
+        for pval, pname, color in [
+            (s["p5"], "P5", "#a0522d"),
+            (s["median"], "P50", "#b8860b"),
+            (s["p95"], "P95", "#a0522d"),
+        ]:
+            fig_dist.add_shape(
+                type="line", x0=pval, x1=pval, y0=0, y1=1,
+                xref=xaxis_ref, yref=f"{yaxis_ref} domain",
+                line=dict(color=color, width=1.5, dash="dash"),
+            )
+            fig_dist.add_annotation(
+                x=pval, y=1.0, xref=xaxis_ref, yref=f"{yaxis_ref} domain",
+                text=f"{pname}: ${pval:,.0f}", showarrow=False,
+                font=dict(size=9, color=color), textangle=-90,
+                yshift=10,
+            )
+
+    fig_dist.update_layout(
+        **AGRO_LAYOUT, height=400,
+        title="Distribucion de Precios Simulados",
+        showlegend=False,
+    )
+    for h in range(n_horizons):
+        fig_dist.update_xaxes(title_text="Precio (MXN/ton)", tickformat="$,.0f", row=1, col=h+1)
+    fig_dist.update_yaxes(title_text="Frecuencia", row=1, col=1)
+    sections.append(dcc.Graph(figure=fig_dist))
+
+    # ---- Sensitivity / Tornado Chart ----
+    if sensitivity:
+        sections.append(html.H2("Analisis de Sensibilidad (Tornado)", className="section-title"))
+
+        fig_tornado = go.Figure()
+        params = [s["parameter"] for s in sensitivity]
+        base = sensitivity[0]["base"]
+
+        for s in sensitivity:
+            fig_tornado.add_trace(go.Bar(
+                y=[s["parameter"]],
+                x=[s["high"] - s["base"]],
+                base=[s["base"]],
+                orientation="h",
+                marker_color="#2d6a4f",
+                name="Alza",
+                showlegend=(s == sensitivity[0]),
+                text=[f"${s['high']:,.0f}"],
+                textposition="outside",
+            ))
+            fig_tornado.add_trace(go.Bar(
+                y=[s["parameter"]],
+                x=[s["low"] - s["base"]],
+                base=[s["base"]],
+                orientation="h",
+                marker_color="#a0522d",
+                name="Baja",
+                showlegend=(s == sensitivity[0]),
+                text=[f"${s['low']:,.0f}"],
+                textposition="outside",
+            ))
+
+        fig_tornado.add_shape(
+            type="line", x0=base, x1=base, y0=0, y1=1,
+            xref="x", yref="paper",
+            line=dict(color="#888", width=1, dash="solid"),
+        )
+        fig_tornado.add_annotation(
+            x=base, y=1.05, xref="x", yref="paper",
+            text=f"Base: ${base:,.0f}", showarrow=False,
+            font=dict(size=10, color="#666"),
+        )
+        fig_tornado.update_layout(
+            **AGRO_LAYOUT, height=350,
+            title="Impacto de Cada Variable en Precio Final (Mediana)",
+            xaxis_title="Precio (MXN/ton)",
+            xaxis_tickformat="$,.0f",
+            barmode="overlay",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                        bgcolor="rgba(0,0,0,0)", font=LEGEND_FONT),
+        )
+        sections.append(dcc.Graph(figure=fig_tornado))
+
+    # ---- Correlation with Fundamentals ----
+    correlations = meth.get("correlations", {})
+    if correlations:
+        sections.append(html.H2("Correlacion Precio vs Fundamentos", className="section-title"))
+
+        corr_names = list(correlations.keys())
+        corr_vals = list(correlations.values())
+        corr_colors = ["#2d6a4f" if v > 0 else "#a0522d" for v in corr_vals]
+
+        fig_corr = go.Figure(go.Bar(
+            x=corr_vals, y=corr_names,
+            orientation="h",
+            marker_color=corr_colors,
+            text=[f"{v:.2f}" for v in corr_vals],
+            textposition="outside",
+        ))
+        fig_corr.update_layout(
+            **AGRO_LAYOUT, height=300,
+            title="Correlacion de Pearson con Precio de Referencia",
+            xaxis_title="Correlacion",
+            xaxis_range=[-1, 1],
+        )
+        sections.append(dcc.Graph(figure=fig_corr))
+
+    # Store-friendly subset (no numpy arrays)
+    store_data = {
+        "summary": summary,
+        "fan_chart": fan,
+        "distribution": dist,
+        "methodology": meth,
+        "n_sims": n_sims,
+        "n_cycles": n_cycles,
+        "prod_shock": prod_shock,
+        "world_shock": world_shock,
+        "price_series": price_series,
+    }
+
+    return store_data, html.Div(sections)
+
+
+@callback(
+    Output("download-mc-excel", "data"),
+    Input("mc-download-btn", "n_clicks"),
+    State("mc-price-series", "value"),
+    State("mc-n-sims", "value"),
+    State("mc-n-cycles", "value"),
+    State("mc-prod-shock", "value"),
+    State("mc-world-shock", "value"),
+    prevent_initial_call=True,
+)
+def download_mc_excel(n_clicks, price_series, n_sims, n_cycles, prod_shock, world_shock):
+    """Re-run simulation and download Excel."""
+    if not n_clicks:
+        return no_update
+    try:
+        result = run_simulation(
+            n_simulations=min(n_sims or 10000, 10000),
+            n_cycles=n_cycles or 3,
+            production_shock=(prod_shock or 0) / 100.0,
+            world_balance_shock=(world_shock or 0) / 100.0,
+            price_series=price_series or "referencia",
+        )
+        excel_bytes = results_to_excel_bytes(result)
+        return dcc.send_bytes(excel_bytes, "monte_carlo_resultados.xlsx")
+    except Exception:
+        return no_update
 
 
 # ---------------------------------------------------------------
