@@ -15,6 +15,7 @@ STEPS = [
     ("SNIIM sugar prices", [sys.executable, "sniim_sugar_scraper.py"]),
     ("CONADESUCA balance index", [sys.executable, "conadesuca_balance_scraper.py"]),
     ("CONADESUCA politica comercial index", [sys.executable, "conadesuca_politica_comercial_scraper.py"]),
+    ("Extract Excel reports from PDFs", [sys.executable, "extract_all_reports.py", "skip-download"]),
     ("ML model retrain", [sys.executable, "sugar_price_model.py"]),
 ]
 
@@ -27,6 +28,9 @@ DATA_FILES = [
     "politica_comercial_index.csv",
     "politica_comercial_index.xlsx",
     "model_results/",
+    "excel_reports/",            # Monte Carlo & reference data
+    "conadesuca_balance_pdfs/",  # PDFs fetched by balance scraper
+    "politica_comercial_pdfs/",  # PDFs used by extract_all_reports
 ]
 
 
