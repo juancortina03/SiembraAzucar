@@ -22,11 +22,14 @@ import time
 # CONADESUCA + extract are faster. ML retrain can also take a while.
 # The two CONADESUCA scrapers require Playwright+Chromium because the
 # target site uses Cloudflare anti-bot challenge pages.
+# extract_all_reports is also gated on playwright because its input
+# PDFs only exist after the playwright-based scrapers download them —
+# without playwright it prints "No data extracted" for every category.
 STEPS = [
     ("SNIIM sugar prices",                       [sys.executable, "sniim_sugar_scraper.py"],                        1500, False),
     ("CONADESUCA balance index",                 [sys.executable, "conadesuca_balance_scraper.py"],                  900, True),
     ("CONADESUCA politica comercial index",      [sys.executable, "conadesuca_politica_comercial_scraper.py"],       900, True),
-    ("Extract Excel reports from PDFs",          [sys.executable, "extract_all_reports.py", "skip-download"],        900, False),
+    ("Extract Excel reports from PDFs",          [sys.executable, "extract_all_reports.py", "skip-download"],        900, True),
     ("ML model retrain",                         [sys.executable, "sugar_price_model.py"],                           600, False),
 ]
 
