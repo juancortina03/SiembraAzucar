@@ -17,16 +17,38 @@ import subprocess
 import sys
 import time
 
-# Each step: (name, command, timeout_seconds)
+# Each step: (name, command, timeout_seconds, requires_playwright)
 # SNIIM scrapes 20+ years of daily prices so it needs a large timeout.
 # CONADESUCA + extract are faster. ML retrain can also take a while.
+# The two CONADESUCA scrapers require Playwright+Chromium because the
+# target site uses Cloudflare anti-bot challenge pages.
 STEPS = [
-    ("SNIIM sugar prices",                       [sys.executable, "sniim_sugar_scraper.py"],                        1500),
-    ("CONADESUCA balance index",                 [sys.executable, "conadesuca_balance_scraper.py"],                  900),
-    ("CONADESUCA politica comercial index",      [sys.executable, "conadesuca_politica_comercial_scraper.py"],       900),
-    ("Extract Excel reports from PDFs",          [sys.executable, "extract_all_reports.py", "skip-download"],        900),
-    ("ML model retrain",                         [sys.executable, "sugar_price_model.py"],                           600),
+    ("SNIIM sugar prices",                       [sys.executable, "sniim_sugar_scraper.py"],                        1500, False),
+    ("CONADESUCA balance index",                 [sys.executable, "conadesuca_balance_scraper.py"],                  900, True),
+    ("CONADESUCA politica comercial index",      [sys.executable, "conadesuca_politica_comercial_scraper.py"],       900, True),
+    ("Extract Excel reports from PDFs",          [sys.executable, "extract_all_reports.py", "skip-download"],        900, False),
+    ("ML model retrain",                         [sys.executable, "sugar_price_model.py"],                           600, False),
 ]
+
+
+def playwright_is_ready():
+    """Return True if Playwright + Chromium are usable in this environment.
+
+    We need BOTH the Python package AND the bundled Chromium browser.
+    A missing browser causes a runtime crash deep in the scraper; we
+    'd rather skip cleanly here.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return False
+    try:
+        with sync_playwright() as p:
+            # executable_path raises if the browser binary is missing
+            _ = p.chromium.executable_path
+            return True
+    except Exception:
+        return False
 
 # Files that get updated by scrapers / model and need to be pushed
 DATA_FILES = [
@@ -168,8 +190,16 @@ def run():
 
     diagnose_environment()
 
+    pw_ok = playwright_is_ready()
+    print(f"\n  Playwright + Chromium available: {'YES' if pw_ok else 'NO (will skip CONADESUCA scrapers)'}")
+
     failed = []
-    for name, cmd, timeout_s in STEPS:
+    skipped = []
+    for name, cmd, timeout_s, needs_pw in STEPS:
+        if needs_pw and not pw_ok:
+            print(f"\n--- {name} ---  SKIPPED (Playwright not available)")
+            skipped.append(name)
+            continue
         print(f"\n--- {name} ---  (timeout: {timeout_s}s)")
         t0 = time.time()
         try:
@@ -179,9 +209,11 @@ def run():
             print(f"  FAILED after {time.time() - t0:.1f}s: {type(e).__name__}: {e}")
             failed.append(name)
 
+    if skipped:
+        print(f"\nNOTE: {len(skipped)} step(s) skipped: {', '.join(skipped)}")
     if failed:
         print(f"\nWARNING: {len(failed)} step(s) failed: {', '.join(failed)}")
-    else:
+    if not failed and not skipped:
         print("\nAll steps completed successfully.")
 
     # Push updated data to GitHub (triggers web service redeploy)
