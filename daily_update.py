@@ -121,9 +121,19 @@ def git_push():
     _run(["git", "config", "user.email", "bot@siembraazucar.com"])
     _run(["git", "config", "user.name", "SiembraAzucar Bot"])
 
-    # Set remote URL with token for auth
+    # Render's cron container has remote-tracking refs (remotes/origin/main)
+    # but NOT an actual `origin` remote in .git/config — so `set-url origin ...`
+    # fails with "error: No such remote 'origin'". We remove-then-add to be
+    # idempotent: works whether origin already exists or not.
     remote_url = f"https://x-access-token:{token}@github.com/{repo}.git"
-    _run(["git", "remote", "set-url", "origin", remote_url])
+    print("\n  Configuring origin remote (idempotent)...")
+    _run(["git", "remote", "remove", "origin"])  # ok if it fails
+    add_result = _run(["git", "remote", "add", "origin", remote_url], capture=True)
+    if add_result.returncode != 0:
+        print(f"  ERROR: could not add origin remote (code {add_result.returncode})")
+        return False
+    # Verify
+    _run(["git", "remote", "-v"], capture=True)
 
     # CRITICAL: Render deploys in detached HEAD. Force-create/reset local `main`
     # branch pointing at current HEAD so `git push origin main` works.
