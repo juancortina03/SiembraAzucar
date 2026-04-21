@@ -50,7 +50,10 @@ def playwright_is_ready():
     except Exception:
         return False
 
-# Files that get updated by scrapers / model and need to be pushed
+# Files that get updated by scrapers / model and need to be pushed.
+# NOTE: PDF directories (~290 MB total) are gitignored intentionally —
+# they're ephemeral cache on Render and get re-scraped each run. Only
+# the EXTRACTED results (CSV/XLSX files + Excel reports) are persisted.
 DATA_FILES = [
     "sniim_sugar_prices.csv",
     "sniim_sugar_prices.xlsx",
@@ -59,9 +62,7 @@ DATA_FILES = [
     "politica_comercial_index.csv",
     "politica_comercial_index.xlsx",
     "model_results/",
-    "excel_reports/",            # Monte Carlo & reference data
-    "conadesuca_balance_pdfs/",  # PDFs fetched by balance scraper
-    "politica_comercial_pdfs/",  # PDFs used by extract_all_reports
+    "excel_reports/",   # Monte Carlo & reference data (generated from PDFs)
 ]
 
 TARGET_BRANCH = "main"
