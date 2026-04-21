@@ -13,3 +13,9 @@ fredapi
 python-dotenv
 gunicorn
 flask
+pmdarima
+xgboost
+joblib
+matplotlib
+statsmodels
+playwright

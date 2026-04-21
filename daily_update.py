@@ -17,12 +17,15 @@ import subprocess
 import sys
 import time
 
+# Each step: (name, command, timeout_seconds)
+# SNIIM scrapes 20+ years of daily prices so it needs a large timeout.
+# CONADESUCA + extract are faster. ML retrain can also take a while.
 STEPS = [
-    ("SNIIM sugar prices", [sys.executable, "sniim_sugar_scraper.py"]),
-    ("CONADESUCA balance index", [sys.executable, "conadesuca_balance_scraper.py"]),
-    ("CONADESUCA politica comercial index", [sys.executable, "conadesuca_politica_comercial_scraper.py"]),
-    ("Extract Excel reports from PDFs", [sys.executable, "extract_all_reports.py", "skip-download"]),
-    ("ML model retrain", [sys.executable, "sugar_price_model.py"]),
+    ("SNIIM sugar prices",                       [sys.executable, "sniim_sugar_scraper.py"],                        1500),
+    ("CONADESUCA balance index",                 [sys.executable, "conadesuca_balance_scraper.py"],                  900),
+    ("CONADESUCA politica comercial index",      [sys.executable, "conadesuca_politica_comercial_scraper.py"],       900),
+    ("Extract Excel reports from PDFs",          [sys.executable, "extract_all_reports.py", "skip-download"],        900),
+    ("ML model retrain",                         [sys.executable, "sugar_price_model.py"],                           600),
 ]
 
 # Files that get updated by scrapers / model and need to be pushed
@@ -166,14 +169,14 @@ def run():
     diagnose_environment()
 
     failed = []
-    for name, cmd in STEPS:
-        print(f"\n--- {name} ---")
+    for name, cmd, timeout_s in STEPS:
+        print(f"\n--- {name} ---  (timeout: {timeout_s}s)")
         t0 = time.time()
         try:
-            subprocess.run(cmd, check=True, timeout=600)
+            subprocess.run(cmd, check=True, timeout=timeout_s)
             print(f"  OK ({time.time() - t0:.1f}s)")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-            print(f"  FAILED: {e}")
+            print(f"  FAILED after {time.time() - t0:.1f}s: {type(e).__name__}: {e}")
             failed.append(name)
 
     if failed:
