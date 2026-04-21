@@ -18,4 +18,8 @@ xgboost
 joblib
 matplotlib
 statsmodels
-playwright
+# playwright is optional — only needed to bypass Cloudflare on CONADESUCA
+# scrapers. Render's default Python buildpack can't install Chromium's
+# system libs without root, so we skip it. daily_update.py detects the
+# absence and cleanly skips the two CONADESUCA steps.
+# To enable Chromium scraping locally:  pip install playwright && playwright install chromium

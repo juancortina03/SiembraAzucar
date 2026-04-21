@@ -23,25 +23,12 @@ services:
   - type: cron
     name: siembra-azucar-daily-update
     runtime: python
-    # System libraries required by Chromium (Playwright).
-    # --with-deps cannot be used on Render because the build phase
-    # runs as a non-root user that can't apt-get install.
-    aptPackages:
-      - libnss3
-      - libnspr4
-      - libatk1.0-0
-      - libatk-bridge2.0-0
-      - libcups2
-      - libxkbcommon0
-      - libxcomposite1
-      - libxdamage1
-      - libxfixes3
-      - libxrandr2
-      - libgbm1
-      - libasound2
-      - libpango-1.0-0
-      - libcairo2
-    buildCommand: pip install -r requirements.txt && playwright install chromium || echo "Playwright install failed; CONADESUCA scrapers will be skipped"
+    # Simple build: just pip install. Playwright/Chromium is NOT installed
+    # because Render's default Python buildpack can't install Chromium's
+    # system dependencies without root. The CONADESUCA scrapers that need
+    # it are skipped cleanly by daily_update.py when playwright_is_ready()
+    # returns False. Result: SNIIM daily prices + ML retrain still refresh.
+    buildCommand: pip install -r requirements.txt
     startCommand: python daily_update.py
     schedule: "0 12 * * *"   # every day at 12:00 UTC (~6am CST)
     envVars:
