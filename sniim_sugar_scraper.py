@@ -6,12 +6,20 @@ as far back as available (year 2000).
 
 import re
 import time
+import urllib3
 from datetime import datetime
 from typing import Optional
 
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+
+# SNIIM (Mexican gov site) sometimes serves a self-signed cert in its chain
+# that fails verification. The site itself is the official government source
+# for sugar prices, so we trust it and disable SSL verification for these
+# specific requests. Suppress the noisy InsecureRequestWarning that would
+# otherwise print every single fetch.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 BASE_URL = "https://www.economia-sniim.gob.mx/AzucarMesPorDia.asp"
 
@@ -67,7 +75,10 @@ def fetch_month_page(prod: int, year: int, month: int) -> Optional[bytes]:
         "Accept-Language": "es-MX,es;q=0.9,en;q=0.8",
     }
     try:
-        r = requests.get(BASE_URL, params=params, headers=headers, timeout=30)
+        # verify=False: SNIIM's TLS chain has a self-signed root that fails
+        # verification on most platforms (May 2026 onwards). The site is the
+        # official Mexican government source, so we trust it.
+        r = requests.get(BASE_URL, params=params, headers=headers, timeout=30, verify=False)
         r.raise_for_status()
         return r.content
     except Exception as e:
@@ -102,7 +113,10 @@ def extract_national_row_and_headers(soup: BeautifulSoup):
                         continue
                     prev_texts = [c.get_text().strip() for c in prev_cells]
                     date_count = sum(1 for t in prev_texts if parse_day_header(t) is not None)
-                    if date_count >= 5:  # header has many date columns
+                    # >= 2 instead of >= 5: early in a month (especially with
+                    # Mexican holidays like May 1 and May 5) the page may have
+                    # just 2-4 trading days and we still want to capture them.
+                    if date_count >= 2:
                         header_cells = prev_texts
                         break
                 break
@@ -124,7 +138,10 @@ def scrape_month(prod: int, year: int, month: int) -> list[dict]:
         html = raw.decode("iso-8859-1")
     except Exception:
         html = raw.decode("utf-8", errors="replace")
-    soup = BeautifulSoup(html, "lxml")
+    # Use html.parser (Python built-in) instead of lxml. SNIIM (May 2026
+    # onwards) returns HTML where lxml collapses the nested data table into
+    # one giant text blob; html.parser preserves the row/column structure.
+    soup = BeautifulSoup(html, "html.parser")
     header_cells, national_cells = extract_national_row_and_headers(soup)
     if not national_cells or not header_cells:
         return []
