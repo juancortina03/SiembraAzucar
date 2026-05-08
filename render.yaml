@@ -30,7 +30,7 @@ services:
     # returns False. Result: SNIIM daily prices + ML retrain still refresh.
     buildCommand: pip install -r requirements.txt
     startCommand: python daily_update.py
-    schedule: "0 12 * * *"   # every day at 12:00 UTC (~6am CST)
+    schedule: "0 12 * * *"   # 12:00 UTC = 6:00 AM Mexico (Jalisco, no DST since 2022)
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
