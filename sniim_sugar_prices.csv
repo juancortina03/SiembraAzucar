@@ -6430,6 +6430,7 @@ date,price,product_type,year,month
 2026-05-07,939.98,estandar,2026,5
 2026-05-08,935.91,estandar,2026,5
 2026-05-11,934.13,estandar,2026,5
+2026-05-12,933.13,estandar,2026,5
 2000-10-02,266.41,refinada,2000,10
 2000-10-03,265.19,refinada,2000,10
 2000-10-04,265.5,refinada,2000,10
@@ -12862,3 +12863,4 @@ date,price,product_type,year,month
 2026-05-07,1136.48,refinada,2026,5
 2026-05-08,1137.23,refinada,2026,5
 2026-05-11,1145.94,refinada,2026,5
+2026-05-12,1142.64,refinada,2026,5
